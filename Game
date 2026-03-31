@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoGuessr บ้านๆ - Thailand Edition</title>
+
+    <!-- Mapillary JS & CSS -->
+    <link href='https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css' rel='stylesheet' />
+    <script src='https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js'></script>
+    
+    <!-- Leaflet JS & CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Google Fonts: Kanit -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Kanit', sans-serif;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #1a1a1a;
+        }
+
+        /* พื้นที่แสดง Mapillary (สตรีทวิว) */
+        #mly {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* กล่องแสดงแผนที่มุมล่างขวา */
+        #map-wrapper {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            z-index: 10;
+            border-radius: 12px;
+            overflow: hidden;
+            /* Glassmorphism */
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ขยายเมื่อเมาส์ชี้ เพื่อให้เดาง่ายขึ้น */
+        #map-wrapper:hover, #map-wrapper.expanded {
+            width: 450px;
+            height: 350px;
+        }
+
+        #map {
+            flex-grow: 1;
+            width: 100%;
+            cursor: crosshair;
+        }
+
+        #guess-btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        #guess-btn:hover {
+            background-color: #45a049;
+        }
+        
+        #guess-btn:disabled {
+            background-color: #888;
+            cursor: not-allowed;
+        }
+
+        /* Modal แจ้งผลลัพธ์ */
+        #result-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(5px);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        #result-modal.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .modal-content {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            max-width: 400px;
+            width: 90%;
+            transform: translateY(20px);
+            transition: transform 0.5s ease;
+        }
+
+        #result-modal.show .modal-content {
+            transform: translateY(0);
+        }
+
+        .modal-content h2 {
+            font-size: 32px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .modal-content .score {
+            font-size: 48px;
+            font-weight: 600;
+            color: #4CAF50;
+            margin: 10px 0;
+        }
+
+        .modal-content .distance {
+            font-size: 20px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        #play-again-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.1s;
+        }
+
+        #play-again-btn:hover {
+            background: #1976D2;
+            transform: scale(1.05);
+        }
+
+        /* Token Warning overlay */
+        #token-warning {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #ff9800;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            z-index: 1000;
+            font-weight: 600;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            z-index: 2;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- ข้อความแจ้งเตือนกรณีลืมใส่ Token (หรือแจ้งสถานะตอนโหลด) -->
+    <div id="token-warning">กำลังโหลด... (หากโหลดนาน โปรดตรวจสอบ Mapillary Token ในโค้ด)</div>
+    <div id="loading">กำลังค้นหาส่วนภาพสตรีทวิว...</div>
+
+    <!-- Mapillary Container -->
+    <div id="mly"></div>
+
+    <!-- แผนที่สำหรับปักหมุดทายตำแหน่ง -->
+    <div id="map-wrapper">
+        <div id="map"></div>
+        <button id="guess-btn" disabled>ยืนยันพิกัด (คลิกที่แผนที่ก่อน)</button>
+    </div>
+
+    <!-- หน้าต่างสรุปผล -->
+    <div id="result-modal">
+        <div class="modal-content">
+            <h2>ผลการทายตำแหน่ง</h2>
+            <div class="score" id="score-text">0 คะแนน</div>
+            <div class="distance" id="distance-text">ห่างออกไป 0 กม.</div>
+            <button id="play-again-btn">เล่นรอบต่อไป</button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 🚨 ใส่ MAPILIARY CLIENT TOKEN ของคุณที่นี่ 🚨
+        // ==========================================
+        const MAPILLARY_TOKEN = 'YOUR_MAPILLARY_TOKEN';
+        // สมัครฟรีที่ https://www.mapillary.com/dashboard/developers
+        
+        // จุดเริ่มสุ่ม (จังหวัดหรือโซนต่างๆ ทั่วไทย) - เพื่อจำกัดกรอบการค้นหาให้เจอภาพง่ายขึ้น
+        const THAILAND_ZONES = [
+            { lat: 13.75, lng: 100.50, name: "กทม" },
+            { lat: 18.78, lng: 98.98, name: "เชียงใหม่" },
+            { lat: 12.92, lng: 100.87, name: "พัทยา" },
+            { lat: 7.89, lng: 98.29, name: "ภูเก็ต" },
+            { lat: 16.42, lng: 102.82, name: "ขอนแก่น" },
+            { lat: 14.35, lng: 100.56, name: "อยุธยา" },
+            { lat: 12.56, lng: 99.95, name: "หัวหิน" },
+            { lat: 9.51, lng: 100.01, name: "สมุย" }
+        ];
+
+        let viewer;
+        let map;
+        let guessMarker;
+        let actualMarker;
+        let resultLine;
+        let currentActualLatLng = null;
+
+        // ฟังก์ชันเริ่มเกม
+        async function initGame() {
+            if (MAPILLARY_TOKEN === 'YOUR_MAPILLARY_TOKEN') {
+                document.getElementById('token-warning').innerHTML = "<b>คำเตือน:</b> คุณยังไม่ได้ใส่ Mapillary Token ในโค้ด<br>สตรีทวิวอาจจะไม่ทำงาน สมัครฟรีได้ที่ mapillary.com";
+                document.getElementById('token-warning').style.background = "#f44336";
+            } else {
+                document.getElementById('token-warning').style.display = "none";
+            }
+
+            initLeafletMap();
+            await loadRandomLocation();
+        }
+
+        // สร้างแผนที่ Leaflet ในช่องขวาล่าง
+        function initLeafletMap() {
+            // ตั้งจุดศูนย์กลางที่ไทยตอนเปิด
+            map = L.map('map', { attributionControl: false }).setView([13.7563, 100.5018], 5);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+            }).addTo(map);
+
+            // ผู้เล่นคลิกเพื่อปักหมุด
+            map.on('click', function(e) {
+                if (actualMarker) return; // ถ้าเฉลยแล้วห้ามปักใหม่
+
+                if (guessMarker) {
+                    guessMarker.setLatLng(e.latlng);
+                } else {
+                    guessMarker = L.marker(e.latlng).addTo(map);
+                }
+                
+                const btn = document.getElementById('guess-btn');
+                btn.disabled = false;
+                btn.innerText = "ยืนยันพิกัด!";
+            });
+
+            document.getElementById('guess-btn').addEventListener('click', handleGuess);
+            document.getElementById('play-again-btn').addEventListener('click', resetRound);
+        }
+
+        // สุ่มหาพิกัดและค้นหาภาพจาก Mapillary API
+        async function loadRandomLocation() {
+            document.getElementById('loading').style.display = "block";
+            
+            // เลือกโซนสุ่ม
+            const zone = THAILAND_ZONES[Math.floor(Math.random() * THAILAND_ZONES.length)];
+            
+            // สุ่มขยับตำแหน่งไปบวกลบประมาณ 0.1 องศา (~11 กิโลเมตร)
+            let latOffset = (Math.random() - 0.5) * 0.2;
+            let lngOffset = (Math.random() - 0.5) * 0.2;
+            let targetLat = zone.lat + latOffset;
+            let targetLng = zone.lng + lngOffset;
+
+            // ค้นหาภาพ Mapillary ที่ใกล้ที่สุดในรัสมี BBOX (Bounding Box)
+            const margin = 0.05;
+            const bbox = `${targetLng - margin},${targetLat - margin},${targetLng + margin},${targetLat + margin}`;
+            const url = `https://graph.mapillary.com/images?access_token=${MAPILLARY_TOKEN}&fields=id,geometry&bbox=${bbox}&limit=50`;
+
+            try {
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (result.data && result.data.length > 0) {
+                    // เจอภาพ หยิบภาพแบบสุ่มมา 1 ภาพ
+                    const randImg = result.data[Math.floor(Math.random() * result.data.length)];
+                    const imageId = randImg.id;
+                    currentActualLatLng = {
+                        lat: randImg.geometry.coordinates[1],
+                        lng: randImg.geometry.coordinates[0]
+                    };
+                    
+                    document.getElementById('loading').style.display = "none";
+                    initMapillaryViewer(imageId);
+                } else {
+                    // ไม่เจอภาพในบริเวณนี้ ให้สุ่มใหม่จนกว่าจะเจอ
+                    console.log("No images found near", targetLat, targetLng, "retrying...");
+                    loadRandomLocation();
+                }
+            } catch (error) {
+                console.error("Error fetching mapillary:", error);
+                document.getElementById('loading').innerText = "เกิดข้อผิดพลาดในการโหลด API - โปรดตรวจสอบ Token";
+            }
+        }
+
+        // เริ่มแสดงภาพ Mapillary สตรีทวิว
+        function initMapillaryViewer(imageId) {
+            if (viewer) {
+                // เปลี่ยนภาพถ้า Viewer สร้างไปแล้ว
+                viewer.moveTo(imageId).catch(err => console.error(err));
+            } else {
+                // สร้างใหม่ครั้งแรก
+                viewer = new mapillary.Viewer({
+                    accessToken: MAPILLARY_TOKEN,
+                    container: 'mly',
+                    imageId: imageId,
+                    component: {
+                        cover: false,
+                        keyboard: false
+                    }
+                });
+            }
+            // ปรับขนาดเมื่อหน้าเปลี่ยน
+            window.addEventListener("resize", () => viewer.resize());
+        }
+
+        // เมื่อกดทายตำแหน่ง
+        function handleGuess() {
+            if (!guessMarker || !currentActualLatLng) return;
+
+            const guessLatLng = guessMarker.getLatLng();
+            const actual = L.latLng(currentActualLatLng.lat, currentActualLatLng.lng);
+            
+            // คำนวณระยะทาง
+            const distance = map.distance(guessLatLng, actual); // เป็นเมตร
+            const distKm = distance / 1000;
+
+            // คำนวณคะแนน (เต็ม 5000) - บ้านๆ คือถ้าระยะห่างน้อยกว่า 100 เมตรได้เต็ม, ไกลเกิน 500km ได้ 0 
+            // ลดหลั่นแบบ Exponential
+            let score = 0;
+            if (distKm <= 0.1) {
+                score = 5000;
+            } else if (distKm >= 500) {
+                score = 0;
+            } else {
+                // สูตรหักคะแนนตามระยะทาง ยิ่งใกล้ยิ่งเยอะ (Math.exp)
+                score = Math.floor(5000 * Math.exp(-distKm / 100)); // ปรับสเกล 100km ให้ความชันพอดี
+            }
+
+            // แสดงเส้นเชื่อมและจุดจริง ในแผนที่
+            actualMarker = L.marker(actual, {
+                icon: L.icon({
+                    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                    iconSize: [25, 41],
+                    iconAnchor: [12, 41],
+                    popupAnchor: [1, -34],
+                    shadowSize: [41, 41]
+                })
+            }).addTo(map);
+
+            resultLine = L.polyline([guessLatLng, actual], {color: (score > 3000 ? 'green' : 'red'), dashArray: '5, 5', weight: 3}).addTo(map);
+
+            // ขยายแผนที่เพื่อโชว์ผล
+            document.getElementById('map-wrapper').classList.add('expanded');
+            map.fitBounds(resultLine.getBounds(), { padding: [30, 30] });
+            map.invalidateSize(); // รีเฟรชขนาด
+
+            // แสดงหน้าผลลัพธ์
+            document.getElementById('score-text').innerText = `${score} คะแนน`;
+            document.getElementById('distance-text').innerText = `พิกัดจริงห่างออกไป ${distKm.toFixed(2)} กม.`;
+            document.getElementById('result-modal').classList.add('show');
+            document.getElementById('guess-btn').disabled = true;
+        }
+
+        // รีเซ็ตรอบถัดไป
+        function resetRound() {
+            document.getElementById('result-modal').classList.remove('show');
+            document.getElementById('map-wrapper').classList.remove('expanded');
+            
+            // ล้างหน้าแผนที่
+            if (guessMarker) map.removeLayer(guessMarker);
+            if (actualMarker) map.removeLayer(actualMarker);
+            if (resultLine) map.removeLayer(resultLine);
+            
+            guessMarker = null;
+            actualMarker = null;
+            currentActualLatLng = null;
+
+            document.getElementById('guess-btn').innerText = "ยืนยันพิกัด (คลิกที่แผนที่ก่อน)";
+            map.setView([13.7563, 100.5018], 5);
+
+            // หาภาพใหม่
+            loadRandomLocation();
+        }
+
+        // เรียกเริ่มเกม
+        initGame();
+
+    </script>
+</body>
+</html>
